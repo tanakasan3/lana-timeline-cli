@@ -66,7 +66,24 @@ customer_deposit_accounts AS (
   FROM core_deposit_account_events_rollup da
   JOIN target_customers tc ON tc.customer_id = da.account_holder_id
 ),
-timeline AS (
+timeline(
+  timeline_customer_id,
+  timeline_facility_id,
+  event_at,
+  effective_at,
+  entity,
+  entity_id,
+  version,
+  event_type,
+  customer_id,
+  facility_id,
+  amount_usd_cents,
+  collateral_sats,
+  collateralization_ratio,
+  price_usd,
+  status,
+  details
+) AS (
   SELECT
     tc.customer_id AS timeline_customer_id,
     NULL::uuid AS timeline_facility_id,
@@ -80,7 +97,7 @@ timeline AS (
     NULL::uuid AS facility_id,
     NULL::bigint AS amount_usd_cents,
     NULL::bigint AS collateral_sats,
-    NULL::numeric AS collateralization_ratio,
+    NULL::jsonb AS collateralization_ratio,
     NULL::bigint AS price_usd,
     p.stage::text AS status,
     jsonb_build_object(
@@ -200,7 +217,7 @@ timeline AS (
     tf.facility_id,
     p.amount,
     p.collateral,
-    p.collateralization_ratio,
+    to_jsonb(p.collateralization_ratio) AS collateralization_ratio,
     p.price,
     p.collateralization_state::text,
     jsonb_build_object(
@@ -229,7 +246,7 @@ timeline AS (
     f.id,
     f.amount,
     f.collateral,
-    f.collateralization_ratio,
+    to_jsonb(f.collateralization_ratio) AS collateralization_ratio,
     f.price,
     f.collateralization_state::text,
     jsonb_build_object(
@@ -262,7 +279,13 @@ timeline AS (
     NULL,
     NULL,
     NULL,
-    d.status::text,
+    CASE
+      WHEN d.is_settled THEN 'settled'
+      WHEN d.is_cancelled THEN 'cancelled'
+      WHEN d.is_approval_process_concluded AND COALESCE(d.approved, false) THEN 'approved'
+      WHEN d.is_approval_process_concluded AND COALESCE(d.approved, false) = false THEN 'denied'
+      ELSE 'new'
+    END AS status,
     jsonb_build_object(
       'approval_process_id', d.approval_process_id,
       'approved', d.approved,
