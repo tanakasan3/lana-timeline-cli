@@ -1,6 +1,23 @@
 # lana-timeline-cli
 
-CLI plumbing to query a **single-customer / single-loan timeline** from Lana Bank PostgreSQL `*_events_rollup` tables.
+CLI plumbing to query customer/loan timelines from Lana Bank PostgreSQL `*_events_rollup` tables.
+
+## Scope behavior (new)
+
+`CUSTOMER_ID` and `FACILITY_ID` are both optional:
+
+- leave both empty → iterate **all customers + all facilities**
+- set `CUSTOMER_ID` only → all facilities for that customer
+- set `FACILITY_ID` only → that facility (and its customer)
+- set both → exact scoped timeline
+
+Output is grouped sequentially by:
+
+- `timeline_customer_id`
+- `timeline_facility_id`
+- `timeline_bucket` (human-readable separator key)
+
+---
 
 ## What this gives you
 
@@ -21,29 +38,31 @@ CLI plumbing to query a **single-customer / single-loan timeline** from Lana Ban
 ```bash
 cd lana-timeline-cli
 make init
-# edit .env and set DB connection + CUSTOMER_ID
+# edit .env and set DB connection; CUSTOMER_ID/FACILITY_ID are optional
 make check
 make timeline
-```
-
-Or pass ids directly:
-
-```bash
-make timeline CUSTOMER_ID=<customer-uuid>
-make timeline CUSTOMER_ID=<customer-uuid> FACILITY_ID=<facility-uuid>
 ```
 
 ## Common commands
 
 ```bash
-# full raw timeline
+# all customers/facilities
+make timeline
+
+# one customer, all facilities
 make timeline CUSTOMER_ID=<customer-uuid>
 
-# CSV output for BI tools
-make timeline-csv CUSTOMER_ID=<customer-uuid>
+# one facility
+make timeline FACILITY_ID=<facility-uuid>
 
-# executive milestone timeline
-make milestones CUSTOMER_ID=<customer-uuid>
+# exact customer+facility
+make timeline CUSTOMER_ID=<customer-uuid> FACILITY_ID=<facility-uuid>
+
+# CSV output for BI tools
+make timeline-csv
+
+# executive milestone timeline (same optional filters)
+make milestones
 
 # create / refresh materialized view
 make mv-create
@@ -52,6 +71,7 @@ make mv-refresh
 
 ## Output columns (main timeline)
 
+- `timeline_customer_id`, `timeline_facility_id`, `timeline_bucket`
 - `event_at`: recorded timestamp (primary ordering)
 - `effective_at`: business-effective date/time when available
 - `entity`, `entity_id`, `version`, `event_type`
@@ -78,7 +98,6 @@ make mv-refresh
 
 ## Notes
 
-- If `FACILITY_ID` is omitted, timeline queries auto-pick latest facility for `CUSTOMER_ID`.
 - Assumes rollup tables exist (e.g., `core_credit_facility_events_rollup`, etc.).
 - Amount units are raw DB units (e.g., cents/satoshis as stored).
 
@@ -90,5 +109,5 @@ make mv-refresh
 - `scripts/run_timeline.sh` – env-aware timeline runner
 - `scripts/run_milestones.sh` – milestone runner
 - `scripts/manage_mv.sh` – MV create/refresh/drop helper
-- `.env.example` – connection + input variables
+- `.env.example` – connection + optional filters
 - `Makefile` – convenient commands

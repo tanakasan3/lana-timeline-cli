@@ -3,30 +3,38 @@
 WITH
 params AS (
   SELECT
-    (:'customer_id')::uuid AS customer_id,
+    NULLIF(:'customer_id', '')::uuid AS customer_id_in,
     NULLIF(:'facility_id', '')::uuid AS facility_id_in
 ),
-facility_pick AS (
-  SELECT COALESCE(
-    (SELECT facility_id_in FROM params),
-    (
-      SELECT f.id
-      FROM core_credit_facility_events_rollup f, params p
-      WHERE f.customer_id = p.customer_id
-      ORDER BY f.modified_at DESC, f.version DESC
-      LIMIT 1
-    )
-  ) AS facility_id
-),
-facility_ids AS (
-  SELECT DISTINCT f.id AS facility_id, f.pending_credit_facility_id, f.customer_id
+target_facilities AS (
+  SELECT DISTINCT ON (f.id)
+    f.id AS facility_id,
+    f.pending_credit_facility_id,
+    f.customer_id
   FROM core_credit_facility_events_rollup f
-  JOIN facility_pick fp ON fp.facility_id = f.id
+  CROSS JOIN params p
+  WHERE (p.facility_id_in IS NULL OR f.id = p.facility_id_in)
+    AND (p.customer_id_in IS NULL OR f.customer_id = p.customer_id_in)
+  ORDER BY f.id, f.version DESC
+),
+target_customers AS (
+  SELECT DISTINCT c.id AS customer_id
+  FROM core_customer_events_rollup c
+  CROSS JOIN params p
+  WHERE (p.customer_id_in IS NULL OR c.id = p.customer_id_in)
+    AND (
+      p.facility_id_in IS NULL
+      OR EXISTS (
+        SELECT 1 FROM target_facilities tf
+        WHERE tf.facility_id = p.facility_id_in
+          AND tf.customer_id = c.id
+      )
+    )
 ),
 pending_ids AS (
   SELECT DISTINCT p.id AS pending_id, p.credit_facility_proposal_id, p.customer_id, p.approval_process_id
   FROM core_pending_credit_facility_events_rollup p
-  JOIN facility_ids f ON f.pending_credit_facility_id = p.id
+  JOIN target_facilities f ON f.pending_credit_facility_id = p.id
 ),
 proposal_ids AS (
   SELECT DISTINCT pr.id AS proposal_id, pr.customer_id, pr.approval_process_id
@@ -36,14 +44,14 @@ proposal_ids AS (
 disbursal_ids AS (
   SELECT DISTINCT d.id AS disbursal_id, d.facility_id, d.obligation_id, d.approval_process_id
   FROM core_disbursal_events_rollup d
-  JOIN facility_ids f ON f.facility_id = d.facility_id
+  JOIN target_facilities f ON f.facility_id = d.facility_id
 ),
 obligation_ids AS (
   SELECT obligation_id FROM disbursal_ids WHERE obligation_id IS NOT NULL
   UNION
   SELECT DISTINCT i.obligation_id
   FROM core_interest_accrual_cycle_events_rollup i
-  JOIN facility_ids f ON f.facility_id = i.facility_id
+  JOIN target_facilities f ON f.facility_id = i.facility_id
   WHERE i.obligation_id IS NOT NULL
 ),
 approval_process_ids AS (
@@ -53,8 +61,15 @@ approval_process_ids AS (
   UNION
   SELECT approval_process_id FROM disbursal_ids WHERE approval_process_id IS NOT NULL
 ),
+customer_deposit_accounts AS (
+  SELECT DISTINCT da.id AS deposit_account_id, da.account_holder_id AS customer_id
+  FROM core_deposit_account_events_rollup da
+  JOIN target_customers tc ON tc.customer_id = da.account_holder_id
+),
 timeline AS (
   SELECT
+    tc.customer_id AS timeline_customer_id,
+    NULL::uuid AS timeline_facility_id,
     p.modified_at AS event_at,
     NULL::timestamptz AS effective_at,
     'prospect'::text AS entity,
@@ -77,11 +92,13 @@ timeline AS (
       'verification_url', p.url
     ) AS details
   FROM core_prospect_events_rollup p
-  JOIN params x ON p.id = x.customer_id
+  JOIN target_customers tc ON p.id = tc.customer_id
 
   UNION ALL
 
   SELECT
+    c.id,
+    NULL,
     c.modified_at,
     NULL,
     'customer',
@@ -103,11 +120,13 @@ timeline AS (
       'conversion', c.conversion
     )
   FROM core_customer_events_rollup c
-  JOIN params x ON c.id = x.customer_id
+  JOIN target_customers tc ON c.id = tc.customer_id
 
   UNION ALL
 
   SELECT
+    pr.customer_id,
+    NULL,
     pr.modified_at,
     NULL,
     'credit_facility_proposal',
@@ -134,6 +153,8 @@ timeline AS (
   UNION ALL
 
   SELECT
+    COALESCE(tf.customer_id, pr.customer_id, p.customer_id),
+    tf.facility_id,
     ap.modified_at,
     NULL,
     'approval_process',
@@ -159,10 +180,16 @@ timeline AS (
     )
   FROM core_approval_process_events_rollup ap
   JOIN approval_process_ids aid ON aid.approval_process_id = ap.id
+  LEFT JOIN proposal_ids pr ON pr.approval_process_id = ap.id
+  LEFT JOIN pending_ids p ON p.approval_process_id = ap.id
+  LEFT JOIN disbursal_ids d ON d.approval_process_id = ap.id
+  LEFT JOIN target_facilities tf ON tf.facility_id = d.facility_id
 
   UNION ALL
 
   SELECT
+    p.customer_id,
+    tf.facility_id,
     p.modified_at,
     NULL,
     'pending_credit_facility',
@@ -170,7 +197,7 @@ timeline AS (
     p.version,
     p.event_type,
     p.customer_id,
-    NULL,
+    tf.facility_id,
     p.amount,
     p.collateral,
     p.collateralization_ratio,
@@ -185,10 +212,13 @@ timeline AS (
     )
   FROM core_pending_credit_facility_events_rollup p
   JOIN pending_ids pid ON pid.pending_id = p.id
+  LEFT JOIN target_facilities tf ON tf.pending_credit_facility_id = p.id
 
   UNION ALL
 
   SELECT
+    f.customer_id,
+    f.id,
     f.modified_at,
     f.activated_at,
     'credit_facility',
@@ -213,11 +243,13 @@ timeline AS (
       'is_completed', f.is_completed
     )
   FROM core_credit_facility_events_rollup f
-  JOIN facility_ids fid ON fid.facility_id = f.id
+  JOIN target_facilities fid ON fid.facility_id = f.id
 
   UNION ALL
 
   SELECT
+    tf.customer_id,
+    d.facility_id,
     d.modified_at,
     d.due_date,
     'disbursal',
@@ -242,10 +274,13 @@ timeline AS (
     )
   FROM core_disbursal_events_rollup d
   JOIN disbursal_ids did ON did.disbursal_id = d.id
+  JOIN target_facilities tf ON tf.facility_id = d.facility_id
 
   UNION ALL
 
   SELECT
+    tf.customer_id,
+    i.facility_id,
     i.modified_at,
     i.accrued_at,
     'interest_accrual_cycle',
@@ -268,11 +303,13 @@ timeline AS (
       'ledger_tx_ids', i.ledger_tx_ids
     )
   FROM core_interest_accrual_cycle_events_rollup i
-  JOIN facility_ids f ON f.facility_id = i.facility_id
+  JOIN target_facilities tf ON tf.facility_id = i.facility_id
 
   UNION ALL
 
   SELECT
+    tf.customer_id,
+    tf.facility_id,
     o.modified_at,
     o.due_date,
     'obligation',
@@ -306,10 +343,14 @@ timeline AS (
     )
   FROM core_obligation_events_rollup o
   JOIN obligation_ids oid ON oid.obligation_id = o.id
+  LEFT JOIN disbursal_ids d ON d.obligation_id = o.id
+  LEFT JOIN target_facilities tf ON tf.facility_id = d.facility_id
 
   UNION ALL
 
   SELECT
+    tf.customer_id,
+    tf.facility_id,
     p.modified_at,
     NULL,
     'payment',
@@ -332,16 +373,16 @@ timeline AS (
       'facility_uncovered_outstanding_account_id', p.facility_uncovered_outstanding_account_id
     )
   FROM core_payment_events_rollup p
-  WHERE p.id IN (
-    SELECT DISTINCT o.payment_id
-    FROM core_obligation_events_rollup o
-    JOIN obligation_ids oid ON oid.obligation_id = o.id
-    WHERE o.payment_id IS NOT NULL
-  )
+  JOIN core_payment_allocation_events_rollup pa ON pa.payment_id = p.id
+  LEFT JOIN disbursal_ids d ON d.obligation_id = pa.obligation_id
+  LEFT JOIN target_facilities tf ON tf.facility_id = d.facility_id
+  WHERE pa.obligation_id IN (SELECT obligation_id FROM obligation_ids)
 
   UNION ALL
 
   SELECT
+    tf.customer_id,
+    tf.facility_id,
     pa.modified_at,
     NULL,
     'payment_allocation',
@@ -366,10 +407,14 @@ timeline AS (
     )
   FROM core_payment_allocation_events_rollup pa
   JOIN obligation_ids oid ON oid.obligation_id = pa.obligation_id
+  LEFT JOIN disbursal_ids d ON d.obligation_id = pa.obligation_id
+  LEFT JOIN target_facilities tf ON tf.facility_id = d.facility_id
 
   UNION ALL
 
   SELECT
+    tf.customer_id,
+    c.secured_loan_id,
     c.modified_at,
     NULL,
     'collateral',
@@ -392,18 +437,20 @@ timeline AS (
       'ledger_tx_ids', c.ledger_tx_ids
     )
   FROM core_collateral_events_rollup c
-  JOIN facility_ids f ON f.facility_id = c.secured_loan_id
+  JOIN target_facilities tf ON tf.facility_id = c.secured_loan_id
 
   UNION ALL
 
   SELECT
+    da.customer_id,
+    NULL,
     d.modified_at,
     NULL,
     'deposit',
     d.id,
     d.version,
     d.event_type,
-    NULL,
+    da.customer_id,
     NULL,
     d.amount,
     NULL,
@@ -417,22 +464,20 @@ timeline AS (
       'ledger_tx_ids', d.ledger_tx_ids
     )
   FROM core_deposit_events_rollup d
-  WHERE d.deposit_account_id IN (
-    SELECT DISTINCT da.id
-    FROM core_deposit_account_events_rollup da
-    JOIN params p ON p.customer_id = da.account_holder_id
-  )
+  JOIN customer_deposit_accounts da ON da.deposit_account_id = d.deposit_account_id
 
   UNION ALL
 
   SELECT
+    da.customer_id,
+    NULL,
     w.modified_at,
     NULL,
     'withdrawal',
     w.id,
     w.version,
     w.event_type,
-    NULL,
+    da.customer_id,
     NULL,
     w.amount,
     NULL,
@@ -448,13 +493,15 @@ timeline AS (
       'ledger_tx_ids', w.ledger_tx_ids
     )
   FROM core_withdrawal_events_rollup w
-  WHERE w.deposit_account_id IN (
-    SELECT DISTINCT da.id
-    FROM core_deposit_account_events_rollup da
-    JOIN params p ON p.customer_id = da.account_holder_id
-  )
+  JOIN customer_deposit_accounts da ON da.deposit_account_id = w.deposit_account_id
 )
 SELECT
+  timeline_customer_id,
+  timeline_facility_id,
+  CASE
+    WHEN timeline_facility_id IS NULL THEN CONCAT('customer/', timeline_customer_id::text)
+    ELSE CONCAT('customer/', timeline_customer_id::text, ' | facility/', timeline_facility_id::text)
+  END AS timeline_bucket,
   event_at,
   effective_at,
   entity,
@@ -470,4 +517,4 @@ SELECT
   status,
   details
 FROM timeline
-ORDER BY event_at, entity, entity_id, version;
+ORDER BY timeline_customer_id, timeline_facility_id NULLS FIRST, event_at, entity, entity_id, version;

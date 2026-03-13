@@ -17,11 +17,6 @@ customer_id="${1:-${CUSTOMER_ID:-}}"
 facility_id="${2:-${FACILITY_ID:-}}"
 format="${OUTPUT_FORMAT:-aligned}"
 
-if [[ -z "${customer_id}" ]]; then
-  echo "customer_id is required. Pass arg1 or set CUSTOMER_ID in .env" >&2
-  exit 1
-fi
-
 export PGPASSWORD="${PGPASSWORD:-}"
 
 psql_opts=(
