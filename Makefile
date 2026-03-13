@@ -1,7 +1,7 @@
 SHELL := /usr/bin/env bash
 ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
-.PHONY: help init check timeline timeline-csv timeline-raw
+.PHONY: help init check timeline timeline-csv timeline-raw milestones mv-create mv-refresh mv-drop
 
 help:
 	@echo "Targets:"
@@ -10,6 +10,10 @@ help:
 	@echo "  make timeline     # run timeline query (aligned output)"
 	@echo "  make timeline-csv # run timeline query (CSV output)"
 	@echo "  make timeline-raw # run timeline query (unaligned output)"
+	@echo "  make milestones   # run executive milestone timeline"
+	@echo "  make mv-create    # create materialized view for fast analytics"
+	@echo "  make mv-refresh   # refresh materialized view"
+	@echo "  make mv-drop      # drop materialized view"
 	@echo ""
 	@echo "Optional vars: CUSTOMER_ID=<uuid> FACILITY_ID=<uuid>"
 
@@ -29,3 +33,15 @@ timeline-csv:
 
 timeline-raw:
 	@OUTPUT_FORMAT=unaligned scripts/run_timeline.sh "$(CUSTOMER_ID)" "$(FACILITY_ID)"
+
+milestones:
+	@scripts/run_milestones.sh "$(CUSTOMER_ID)" "$(FACILITY_ID)"
+
+mv-create:
+	@scripts/manage_mv.sh create
+
+mv-refresh:
+	@scripts/manage_mv.sh refresh
+
+mv-drop:
+	@scripts/manage_mv.sh drop
