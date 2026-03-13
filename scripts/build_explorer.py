@@ -94,6 +94,18 @@ function dur(obj, path) {{
   return raw === null || raw === undefined ? null : JSON.stringify(raw);
 }}
 
+function satsToBtc(n) {{
+  const x = Number(n);
+  if (!Number.isFinite(x)) return null;
+  return (x / 100000000).toFixed(8);
+}}
+
+function centsToUsd(n) {{
+  const x = Number(n);
+  if (!Number.isFinite(x)) return null;
+  return (x / 100).toFixed(2);
+}}
+
 function formatTerms(terms) {{
   if (!terms || typeof terms !== 'object') return '';
   const picks = [
@@ -111,7 +123,8 @@ function formatTerms(terms) {{
     ['liquidation_duration', dur(terms, ['obligation_liquidation_duration_from_due'])],
   ];
 
-  const rows = picks.filter(([_, v]) => v !== null && v !== undefined && v !== 'null' && v !== 'undefined')
+  const rows = picks
+    .filter(([_, v]) => v !== null && v !== undefined && v !== 'null' && v !== 'undefined')
     .map(([k, v]) => `<li><b>${{esc(k)}}:</b> ${{esc(v)}}</li>`)
     .join('');
 
@@ -119,22 +132,57 @@ function formatTerms(terms) {{
   return `<div class=\"details-title\">terms</div><ul class=\"kv\">${{rows}}</ul>`;
 }}
 
+function formatQuant(parsed) {{
+  const pairs = [];
+
+  if (parsed.abs_diff !== undefined && parsed.abs_diff !== null) {{
+    const btc = satsToBtc(parsed.abs_diff);
+    if (btc !== null) {{
+      const dir = String(parsed.direction || '').toLowerCase();
+      const sign = dir === 'add' ? '+' : (dir === 'subtract' ? '-' : '');
+      pairs.push(['abs_diff', `${{sign}}${{btc}}`]);
+    }}
+  }}
+
+  if (parsed.collateral_amount !== undefined && parsed.collateral_amount !== null) {{
+    const btc = satsToBtc(parsed.collateral_amount);
+    if (btc !== null) pairs.push(['collateral_amount_btc', btc]);
+  }}
+
+  if (parsed.amount !== undefined && parsed.amount !== null) {{
+    const usd = centsToUsd(parsed.amount);
+    if (usd !== null) pairs.push(['amount_usd', usd]);
+  }}
+
+  for (const k of ['due_amount', 'overdue_amount', 'defaulted_amount', 'payment_allocation_amount']) {{
+    if (parsed[k] !== undefined && parsed[k] !== null) {{
+      const usd = centsToUsd(parsed[k]);
+      if (usd !== null) pairs.push([`${{k}}_usd`, usd]);
+    }}
+  }}
+
+  if (!pairs.length) return '';
+  return `<div class=\"details-title\">quantitative</div><ul class=\"kv\">` +
+    pairs.map(([k, v]) => `<li><b>${{esc(k)}}:</b> ${{esc(v)}}</li>`).join('') +
+    `</ul>`;
+}}
+
 function formatDetails(v) {{
   const parsed = typeof v === 'string' ? safeJsonParse(v) : v;
   if (!parsed || typeof parsed !== 'object') return `<pre>${{esc(v)}}</pre>`;
 
-  const termsBlock = formatTerms(parsed.terms);
-
-  const topKeys = ['public_id','customer_type','approval_process_id','obligation_id','payment_id','beneficiary_id','reference'];
+  const topKeys = ['public_id','customer_type','approval_process_id','obligation_id','payment_id','beneficiary_id','reference','direction'];
   const topRows = topKeys
     .filter(k => parsed[k] !== undefined && parsed[k] !== null && parsed[k] !== '')
     .map(k => `<li><b>${{esc(k)}}:</b> ${{esc(parsed[k])}}</li>`)
     .join('');
 
   const topBlock = topRows ? `<ul class=\"kv\">${{topRows}}</ul>` : '';
+  const quantBlock = formatQuant(parsed);
+  const termsBlock = formatTerms(parsed.terms);
   const rawBlock = `<details><summary class=\"muted\">raw json</summary><pre>${{esc(JSON.stringify(parsed, null, 2))}}</pre></details>`;
 
-  return `${{topBlock}}${{termsBlock}}${{rawBlock}}`;
+  return `${{topBlock}}${{quantBlock}}${{termsBlock}}${{rawBlock}}`;
 }}
 
 function renderTable(elId, rows, preferredCols) {{
