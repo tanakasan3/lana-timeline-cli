@@ -106,15 +106,45 @@ function centsToUsd(n) {{
   return (x / 100).toFixed(2);
 }}
 
+function pct(n) {{
+  if (n === null || n === undefined) return null;
+  const x = Number(n);
+  if (!Number.isFinite(x)) return String(n);
+  return x.toFixed(4) + '%';
+}}
+
+function cvl(v) {{
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'object' && v.Finite !== undefined) return pct(v.Finite);
+  return pct(v);
+}}
+
+function formatPeriod(period) {{
+  if (!period || typeof period !== 'object') return '';
+  const start = period.start ?? null;
+  const end = period.end ?? null;
+  const interval = (period.interval && period.interval.type) ? period.interval.type : null;
+  const rows = [
+    ['period_start', start],
+    ['period_end', end],
+    ['period_interval', interval],
+  ].filter(([_, v]) => v !== null && v !== undefined)
+   .map(([k, v]) => `<li><b>${{esc(k)}}:</b> ${{esc(v)}}</li>`)
+   .join('');
+
+  if (!rows) return '';
+  return `<div class=\"details-title\">period</div><ul class=\"kv\">${{rows}}</ul>`;
+}}
+
 function formatTerms(terms) {{
   if (!terms || typeof terms !== 'object') return '';
   const picks = [
     ['duration', dur(terms, ['duration'])],
-    ['annual_rate', val(['annual_rate'], terms)],
-    ['one_time_fee_rate', val(['one_time_fee_rate'], terms)],
-    ['initial_cvl', val(['initial_cvl', 'Finite'], terms) ?? JSON.stringify(val(['initial_cvl'], terms))],
-    ['margin_call_cvl', val(['margin_call_cvl', 'Finite'], terms) ?? JSON.stringify(val(['margin_call_cvl'], terms))],
-    ['liquidation_cvl', val(['liquidation_cvl', 'Finite'], terms) ?? JSON.stringify(val(['liquidation_cvl'], terms))],
+    ['annual_rate', pct(val(['annual_rate'], terms))],
+    ['one_time_fee_rate', pct(val(['one_time_fee_rate'], terms))],
+    ['initial_cvl', cvl(val(['initial_cvl'], terms))],
+    ['margin_call_cvl', cvl(val(['margin_call_cvl'], terms))],
+    ['liquidation_cvl', cvl(val(['liquidation_cvl'], terms))],
     ['disbursal_policy', val(['disbursal_policy'], terms)],
     ['accrual_interval', val(['accrual_interval', 'type'], terms) ?? JSON.stringify(val(['accrual_interval'], terms))],
     ['accrual_cycle_interval', val(['accrual_cycle_interval', 'type'], terms) ?? JSON.stringify(val(['accrual_cycle_interval'], terms))],
@@ -154,6 +184,13 @@ function formatQuant(parsed) {{
     if (usd !== null) pairs.push(['amount_usd', usd]);
   }}
 
+  for (const k of ['price', 'outstanding', 'trigger_price']) {{
+    if (parsed[k] !== undefined && parsed[k] !== null) {{
+      const usd = centsToUsd(parsed[k]);
+      if (usd !== null) pairs.push([`${{k}}_usd`, usd]);
+    }}
+  }}
+
   for (const k of ['due_amount', 'overdue_amount', 'defaulted_amount', 'payment_allocation_amount']) {{
     if (parsed[k] !== undefined && parsed[k] !== null) {{
       const usd = centsToUsd(parsed[k]);
@@ -171,7 +208,7 @@ function formatDetails(v) {{
   const parsed = typeof v === 'string' ? safeJsonParse(v) : v;
   if (!parsed || typeof parsed !== 'object') return `<pre>${{esc(v)}}</pre>`;
 
-  const topKeys = ['public_id','customer_type','approval_process_id','obligation_id','payment_id','beneficiary_id','reference','direction'];
+  const topKeys = ['public_id','customer_type','approval_process_id','obligation_id','payment_id','beneficiary_id','reference','direction','maturity_date'];
   const topRows = topKeys
     .filter(k => parsed[k] !== undefined && parsed[k] !== null && parsed[k] !== '')
     .map(k => `<li><b>${{esc(k)}}:</b> ${{esc(parsed[k])}}</li>`)
@@ -180,9 +217,10 @@ function formatDetails(v) {{
   const topBlock = topRows ? `<ul class=\"kv\">${{topRows}}</ul>` : '';
   const quantBlock = formatQuant(parsed);
   const termsBlock = formatTerms(parsed.terms);
+  const periodBlock = formatPeriod(parsed.period);
   const rawBlock = `<details><summary class=\"muted\">raw json</summary><pre>${{esc(JSON.stringify(parsed, null, 2))}}</pre></details>`;
 
-  return `${{topBlock}}${{quantBlock}}${{termsBlock}}${{rawBlock}}`;
+  return `${{topBlock}}${{quantBlock}}${{termsBlock}}${{periodBlock}}${{rawBlock}}`;
 }}
 
 function renderTable(elId, rows, preferredCols) {{
