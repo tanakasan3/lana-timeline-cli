@@ -204,6 +204,30 @@ function formatQuant(parsed) {{
     `</ul>`;
 }}
 
+function formatCollateralizationRatio(v) {{
+  if (v === null || v === undefined || v === '') return '';
+  const parsed = (typeof v === 'string') ? safeJsonParse(v) : v;
+
+  if (parsed === null) return 'NaN';
+
+  if (typeof parsed === 'number') return String(parsed);
+  if (typeof parsed === 'string') {{
+    if (parsed.toLowerCase() === 'infinite' || parsed.toLowerCase() === 'null') return 'NaN';
+    const n = Number(parsed);
+    return Number.isFinite(n) ? String(n) : 'NaN';
+  }}
+
+  if (typeof parsed === 'object') {{
+    if (parsed.Finite !== undefined && parsed.Finite !== null) {{
+      const n = Number(parsed.Finite);
+      return Number.isFinite(n) ? String(n) : String(parsed.Finite);
+    }}
+    if (parsed.Infinite !== undefined || parsed.Null !== undefined) return 'NaN';
+  }}
+
+  return 'NaN';
+}}
+
 function formatDetails(v) {{
   const parsed = typeof v === 'string' ? safeJsonParse(v) : v;
   if (!parsed || typeof parsed !== 'object') return `<pre>${{esc(v)}}</pre>`;
@@ -234,6 +258,7 @@ function renderTable(elId, rows, preferredCols) {{
   const tbody = rows.map(r => '<tr>' + cols.map(c => {{
       const v = (r[c] ?? '');
       if (c === 'details') return `<td>${{formatDetails(v)}}</td>`;
+      if (c === 'collateralization_ratio') return `<td>${{esc(formatCollateralizationRatio(v))}}</td>`;
       return `<td>${{esc(v)}}</td>`;
     }}).join('') + '</tr>').join('');
   el.innerHTML = `<thead>${{thead}}</thead><tbody>${{tbody}}</tbody>`;
