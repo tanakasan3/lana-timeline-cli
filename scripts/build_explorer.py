@@ -41,6 +41,9 @@ html = f"""<!doctype html>
     .section {{ margin-top: 24px; }}
     .badge {{ display:inline-block; padding:2px 8px; border-radius:999px; background:#eee; font-size:12px; }}
     pre {{ margin: 0; white-space: pre-wrap; word-break: break-word; max-width: 520px; }}
+    .kv {{ margin: 0; padding-left: 16px; }}
+    .kv li {{ margin: 0 0 2px; }}
+    .details-title {{ font-weight: 600; margin-bottom: 4px; }}
   </style>
 </head>
 <body>
@@ -62,6 +65,78 @@ html = f"""<!doctype html>
 const timeline = {json.dumps(timeline)};
 const milestones = {json.dumps(milestones)};
 
+function esc(s) {{
+  return String(s ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}}
+
+function safeJsonParse(s) {{
+  try {{
+    return JSON.parse(s);
+  }} catch (_) {{
+    return null;
+  }}
+}}
+
+function val(path, obj) {{
+  return path.reduce((acc, k) => (acc && acc[k] !== undefined ? acc[k] : null), obj);
+}}
+
+function dur(obj, path) {{
+  const v = val(path.concat(['value']), obj);
+  const t = val(path.concat(['type']), obj);
+  if (v !== null && v !== undefined) return String(v) + (t ? (' ' + String(t)) : '');
+  const raw = val(path, obj);
+  return raw === null || raw === undefined ? null : JSON.stringify(raw);
+}}
+
+function formatTerms(terms) {{
+  if (!terms || typeof terms !== 'object') return '';
+  const picks = [
+    ['duration', dur(terms, ['duration'])],
+    ['annual_rate', val(['annual_rate'], terms)],
+    ['one_time_fee_rate', val(['one_time_fee_rate'], terms)],
+    ['initial_cvl', val(['initial_cvl', 'Finite'], terms) ?? JSON.stringify(val(['initial_cvl'], terms))],
+    ['margin_call_cvl', val(['margin_call_cvl', 'Finite'], terms) ?? JSON.stringify(val(['margin_call_cvl'], terms))],
+    ['liquidation_cvl', val(['liquidation_cvl', 'Finite'], terms) ?? JSON.stringify(val(['liquidation_cvl'], terms))],
+    ['disbursal_policy', val(['disbursal_policy'], terms)],
+    ['accrual_interval', val(['accrual_interval', 'type'], terms) ?? JSON.stringify(val(['accrual_interval'], terms))],
+    ['accrual_cycle_interval', val(['accrual_cycle_interval', 'type'], terms) ?? JSON.stringify(val(['accrual_cycle_interval'], terms))],
+    ['interest_due_duration', dur(terms, ['interest_due_duration_from_accrual'])],
+    ['overdue_duration', dur(terms, ['obligation_overdue_duration_from_due'])],
+    ['liquidation_duration', dur(terms, ['obligation_liquidation_duration_from_due'])],
+  ];
+
+  const rows = picks.filter(([_, v]) => v !== null && v !== undefined && v !== 'null' && v !== 'undefined')
+    .map(([k, v]) => `<li><b>${{esc(k)}}:</b> ${{esc(v)}}</li>`)
+    .join('');
+
+  if (!rows) return '';
+  return `<div class=\"details-title\">terms</div><ul class=\"kv\">${{rows}}</ul>`;
+}}
+
+function formatDetails(v) {{
+  const parsed = typeof v === 'string' ? safeJsonParse(v) : v;
+  if (!parsed || typeof parsed !== 'object') return `<pre>${{esc(v)}}</pre>`;
+
+  const termsBlock = formatTerms(parsed.terms);
+
+  const topKeys = ['public_id','customer_type','approval_process_id','obligation_id','payment_id','beneficiary_id','reference'];
+  const topRows = topKeys
+    .filter(k => parsed[k] !== undefined && parsed[k] !== null && parsed[k] !== '')
+    .map(k => `<li><b>${{esc(k)}}:</b> ${{esc(parsed[k])}}</li>`)
+    .join('');
+
+  const topBlock = topRows ? `<ul class=\"kv\">${{topRows}}</ul>` : '';
+  const rawBlock = `<details><summary class=\"muted\">raw json</summary><pre>${{esc(JSON.stringify(parsed, null, 2))}}</pre></details>`;
+
+  return `${{topBlock}}${{termsBlock}}${{rawBlock}}`;
+}}
+
 function renderTable(elId, rows, preferredCols) {{
   const el = document.getElementById(elId);
   if (!rows.length) {{
@@ -69,11 +144,11 @@ function renderTable(elId, rows, preferredCols) {{
     return;
   }}
   const cols = preferredCols.filter(c => rows[0].hasOwnProperty(c));
-  const thead = '<tr>' + cols.map(c => `<th>${{c}}</th>`).join('') + '</tr>';
+  const thead = '<tr>' + cols.map(c => `<th>${{esc(c)}}</th>`).join('') + '</tr>';
   const tbody = rows.map(r => '<tr>' + cols.map(c => {{
       const v = (r[c] ?? '');
-      if (c === 'details') return `<td><pre>${{String(v)}}</pre></td>`;
-      return `<td>${{String(v)}}</td>`;
+      if (c === 'details') return `<td>${{formatDetails(v)}}</td>`;
+      return `<td>${{esc(v)}}</td>`;
     }}).join('') + '</tr>').join('');
   el.innerHTML = `<thead>${{thead}}</thead><tbody>${{tbody}}</tbody>`;
 }}
