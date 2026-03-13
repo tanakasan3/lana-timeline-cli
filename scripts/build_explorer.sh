@@ -13,7 +13,9 @@ html_out="${OUT_DIR}/explorer_${stamp}.html"
 OUTPUT_FORMAT=csv "${ROOT_DIR}/scripts/run_timeline.sh" "${1:-}" "${2:-}" > "$timeline_csv"
 OUTPUT_FORMAT=csv "${ROOT_DIR}/scripts/run_milestones.sh" "${1:-}" "${2:-}" > "$milestones_csv"
 python3 "${ROOT_DIR}/scripts/build_explorer.py" "$timeline_csv" "$milestones_csv" "$html_out" >/dev/null
+cp "$html_out" "${OUT_DIR}/index.html"
 
 echo "timeline_csv=$timeline_csv"
 echo "milestones_csv=$milestones_csv"
 echo "explorer_html=$html_out"
+echo "explorer_latest=${OUT_DIR}/index.html"

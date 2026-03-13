@@ -68,8 +68,9 @@ make milestones-save
 
 # build local HTML data explorer (timeline + milestones)
 make explorer
+# opens as latest at out/index.html
 
-# serve ./out at http://127.0.0.1:8000
+# serve ./out at http://127.0.0.1:8000 (open /index.html)
 make serve-out
 # optional: custom port
 make serve-out PORT=9000
