@@ -60,6 +60,19 @@ make timeline CUSTOMER_ID=<customer-uuid> FACILITY_ID=<facility-uuid>
 
 # CSV output for BI tools
 make timeline-csv
+make milestones-csv
+
+# save outputs to ./out/
+make timeline-save
+make milestones-save
+
+# build local HTML data explorer (timeline + milestones)
+make explorer
+
+# serve ./out at http://127.0.0.1:8000
+make serve-out
+# optional: custom port
+make serve-out PORT=9000
 
 # executive milestone timeline (same optional filters)
 make milestones
@@ -109,5 +122,7 @@ make mv-refresh
 - `scripts/run_timeline.sh` – env-aware timeline runner
 - `scripts/run_milestones.sh` – milestone runner
 - `scripts/manage_mv.sh` – MV create/refresh/drop helper
+- `scripts/build_explorer.sh` + `scripts/build_explorer.py` – generate HTML data explorer from CSV dumps
+- `scripts/serve_out.sh` – serve `./out` locally via Python HTTP server
 - `.env.example` – connection + optional filters
 - `Makefile` – convenient commands

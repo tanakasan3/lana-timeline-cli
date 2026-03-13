@@ -1,7 +1,7 @@
 SHELL := /usr/bin/env bash
 ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
-.PHONY: help init check db-test table-stats timeline timeline-csv timeline-raw milestones mv-create mv-refresh mv-drop
+.PHONY: help init check db-test table-stats timeline timeline-csv timeline-raw timeline-save milestones milestones-csv milestones-save explorer serve-out mv-create mv-refresh mv-drop
 
 help:
 	@echo "Targets:"
@@ -12,7 +12,12 @@ help:
 	@echo "  make timeline     # run timeline query (aligned output)"
 	@echo "  make timeline-csv # run timeline query (CSV output)"
 	@echo "  make timeline-raw # run timeline query (unaligned output)"
+	@echo "  make timeline-save# save timeline CSV to ./out/"
 	@echo "  make milestones   # run executive milestone timeline"
+	@echo "  make milestones-csv # run milestones query (CSV output)"
+	@echo "  make milestones-save # save milestones CSV to ./out/"
+	@echo "  make explorer     # save timeline+milestones CSV and build HTML explorer in ./out/"
+	@echo "  make serve-out    # serve ./out via local web server"
 	@echo "  make mv-create    # create materialized view for fast analytics"
 	@echo "  make mv-refresh   # refresh materialized view"
 	@echo "  make mv-drop      # drop materialized view"
@@ -42,8 +47,29 @@ timeline-csv:
 timeline-raw:
 	@OUTPUT_FORMAT=unaligned scripts/run_timeline.sh "$(CUSTOMER_ID)" "$(FACILITY_ID)"
 
+timeline-save:
+	@mkdir -p out
+	@f="out/timeline_$$(date -u +%Y%m%dT%H%M%SZ).csv"; \
+	OUTPUT_FORMAT=csv scripts/run_timeline.sh "$(CUSTOMER_ID)" "$(FACILITY_ID)" > "$$f"; \
+	echo "saved $$f"
+
 milestones:
 	@scripts/run_milestones.sh "$(CUSTOMER_ID)" "$(FACILITY_ID)"
+
+milestones-csv:
+	@OUTPUT_FORMAT=csv scripts/run_milestones.sh "$(CUSTOMER_ID)" "$(FACILITY_ID)"
+
+milestones-save:
+	@mkdir -p out
+	@f="out/milestones_$$(date -u +%Y%m%dT%H%M%SZ).csv"; \
+	OUTPUT_FORMAT=csv scripts/run_milestones.sh "$(CUSTOMER_ID)" "$(FACILITY_ID)" > "$$f"; \
+	echo "saved $$f"
+
+explorer:
+	@bash scripts/build_explorer.sh "$(CUSTOMER_ID)" "$(FACILITY_ID)"
+
+serve-out:
+	@bash scripts/serve_out.sh "$(PORT)"
 
 mv-create:
 	@scripts/manage_mv.sh create
