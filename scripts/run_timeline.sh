@@ -10,12 +10,13 @@ if [[ ! -f "${ENV_FILE}" ]]; then
   exit 1
 fi
 
+pre_output_format="${OUTPUT_FORMAT:-}"
 # shellcheck disable=SC1090
 source "${ENV_FILE}"
 
 customer_id="${1:-${CUSTOMER_ID:-}}"
 facility_id="${2:-${FACILITY_ID:-}}"
-format="${OUTPUT_FORMAT:-aligned}"
+format="${pre_output_format:-${OUTPUT_FORMAT:-aligned}}"
 
 export PGPASSWORD="${PGPASSWORD:-}"
 
