@@ -30,20 +30,47 @@ html = f"""<!doctype html>
   <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
   <title>Lana Timeline Explorer</title>
   <style>
-    body {{ font-family: system-ui, Arial, sans-serif; margin: 20px; }}
+    :root {{
+      color-scheme: dark;
+      --bg: #0f1117;
+      --panel: #161a22;
+      --panel-2: #1d2430;
+      --fg: #e6edf3;
+      --muted: #9aa4b2;
+      --border: #2a3342;
+      --badge-bg: #253247;
+      --accent: #7cc7ff;
+    }}
+    body {{
+      font-family: system-ui, Arial, sans-serif;
+      margin: 20px;
+      background: var(--bg);
+      color: var(--fg);
+    }}
     h1 {{ margin: 0 0 12px; }}
-    .meta {{ color: #555; margin-bottom: 16px; }}
-    input {{ padding: 8px; width: 100%; max-width: 560px; margin-bottom: 12px; }}
-    table {{ border-collapse: collapse; width: 100%; font-size: 13px; }}
-    th, td {{ border: 1px solid #ddd; padding: 6px 8px; text-align: left; vertical-align: top; }}
-    th {{ position: sticky; top: 0; background: #f6f6f6; }}
-    .muted {{ color: #777; }}
+    h2 {{ margin: 0 0 10px; }}
+    .meta {{ color: var(--muted); margin-bottom: 16px; }}
+    input {{
+      padding: 8px;
+      width: 100%;
+      max-width: 560px;
+      margin-bottom: 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel);
+      color: var(--fg);
+    }}
+    table {{ border-collapse: collapse; width: 100%; font-size: 13px; background: var(--panel); }}
+    th, td {{ border: 1px solid var(--border); padding: 6px 8px; text-align: left; vertical-align: top; }}
+    th {{ position: sticky; top: 0; background: var(--panel-2); }}
+    .muted {{ color: var(--muted); }}
     .section {{ margin-top: 24px; }}
-    .badge {{ display:inline-block; padding:2px 8px; border-radius:999px; background:#eee; font-size:12px; }}
+    .badge {{ display:inline-block; padding:2px 8px; border-radius:999px; background:var(--badge-bg); color: var(--accent); font-size:12px; border: 1px solid var(--border); }}
     pre {{ margin: 0; white-space: pre-wrap; word-break: break-word; max-width: 520px; }}
     .kv {{ margin: 0; padding-left: 16px; }}
     .kv li {{ margin: 0 0 2px; }}
     .details-title {{ font-weight: 600; margin-bottom: 4px; }}
+    a {{ color: var(--accent); }}
   </style>
 </head>
 <body>
