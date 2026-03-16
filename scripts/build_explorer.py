@@ -255,7 +255,82 @@ function formatCollateralizationRatio(v) {{
   return 'NaN';
 }}
 
-function formatDetails(v) {{
+function eom(y, m) {{
+  return new Date(Date.UTC(y, m + 1, 0));
+}}
+
+function formatRepaymentSchedule(parsed, row) {{
+  if (!parsed || !parsed.terms) return '';
+  const terms = parsed.terms;
+  const dur = terms.duration;
+  if (!dur || dur.type !== 'months' || !dur.value) return '';
+  const acyclType = val(['accrual_cycle_interval', 'type'], terms);
+  if (acyclType !== 'end_of_month') return '';
+  const annualRate = Number(val(['annual_rate'], terms));
+  const otfRate = Number(val(['one_time_fee_rate'], terms));
+  if (!Number.isFinite(annualRate)) return '';
+  const principalCents = Number(row.amount_usd_cents);
+  if (!Number.isFinite(principalCents) || principalCents <= 0) return '';
+
+  const startStr = row.effective_at || '';
+  if (!startStr) return '';
+  const startDate = new Date(startStr);
+  if (isNaN(startDate.getTime())) return '';
+
+  const startY = startDate.getUTCFullYear();
+  const startM = startDate.getUTCMonth();
+  const startD = startDate.getUTCDate();
+  const matDate = new Date(Date.UTC(startY, startM + dur.value, startD));
+  const matTime = matDate.getTime();
+  const startTime = Date.UTC(startY, startM, startD);
+
+  const payments = [];
+  let num = 1;
+
+  if (Number.isFinite(otfRate) && otfRate > 0) {{
+    const feeCents = Math.ceil(principalCents * otfRate / 100);
+    payments.push({{ num: num++, date: startDate, daysSinceStart: 0, principal: 0, interest: feeCents }});
+  }}
+
+  let prevDate = new Date(startTime);
+  let curM = startM + 1;
+  let curY = startY;
+  if (curM > 11) {{ curM -= 12; curY++; }}
+
+  while (true) {{
+    const eomDate = eom(curY, curM);
+    if (eomDate.getTime() >= matTime) break;
+    const daysInPeriod = Math.round((eomDate.getTime() - prevDate.getTime()) / 86400000);
+    const intCents = Math.ceil(principalCents * daysInPeriod * annualRate / 100 / 365);
+    const daysSinceStart = Math.round((eomDate.getTime() - startTime) / 86400000);
+    payments.push({{ num: num++, date: eomDate, daysSinceStart, principal: 0, interest: intCents }});
+    prevDate = eomDate;
+    curM++;
+    if (curM > 11) {{ curM -= 12; curY++; }}
+  }}
+
+  const finalDays = Math.round((matTime - prevDate.getTime()) / 86400000);
+  const finalInt = Math.ceil(principalCents * finalDays * annualRate / 100 / 365);
+  const totalDays = Math.round((matTime - startTime) / 86400000);
+  payments.push({{ num: num++, date: matDate, daysSinceStart: totalDays, principal: principalCents, interest: finalInt }});
+
+  function fmtDate(d) {{
+    return d.toISOString().slice(0, 10);
+  }}
+  function fmtUsd(cents) {{
+    return (cents / 100).toFixed(2);
+  }}
+
+  const hdr = '<tr><th>#</th><th>payment_date</th><th>days_since_start</th><th>principal_usd</th><th>interest_usd</th><th>total_usd</th></tr>';
+  const rows = payments.map(p => {{
+    const total = p.principal + p.interest;
+    return `<tr><td>${{p.num}}</td><td>${{fmtDate(p.date)}}</td><td>${{p.daysSinceStart}}</td><td>${{fmtUsd(p.principal)}}</td><td>${{fmtUsd(p.interest)}}</td><td>${{fmtUsd(total)}}</td></tr>`;
+  }}).join('');
+
+  return `<details><summary class=\"details-title\">repayment schedule</summary><table style=\"font-size:12px;margin-top:6px;\">${{hdr}}${{rows}}</table></details>`;
+}}
+
+function formatDetails(v, row) {{
   const parsed = typeof v === 'string' ? safeJsonParse(v) : v;
   if (!parsed || typeof parsed !== 'object') return `<pre>${{esc(v)}}</pre>`;
 
@@ -269,9 +344,11 @@ function formatDetails(v) {{
   const quantBlock = formatQuant(parsed);
   const termsBlock = formatTerms(parsed.terms);
   const periodBlock = formatPeriod(parsed.period);
+  const entity = (row && row.entity) ? row.entity : '';
+  const schedBlock = (entity === 'credit_facility') ? formatRepaymentSchedule(parsed, row) : '';
   const rawBlock = `<details><summary class=\"muted\">raw json</summary><pre>${{esc(JSON.stringify(parsed, null, 2))}}</pre></details>`;
 
-  return `${{topBlock}}${{quantBlock}}${{termsBlock}}${{periodBlock}}${{rawBlock}}`;
+  return `${{topBlock}}${{quantBlock}}${{termsBlock}}${{periodBlock}}${{schedBlock}}${{rawBlock}}`;
 }}
 
 function renderTable(elId, rows, preferredCols) {{
@@ -284,7 +361,7 @@ function renderTable(elId, rows, preferredCols) {{
   const thead = '<tr>' + cols.map(c => `<th>${{esc(c)}}</th>`).join('') + '</tr>';
   const tbody = rows.map(r => '<tr>' + cols.map(c => {{
       const v = (r[c] ?? '');
-      if (c === 'details') return `<td>${{formatDetails(v)}}</td>`;
+      if (c === 'details') return `<td>${{formatDetails(v, r)}}</td>`;
       if (c === 'collateralization_ratio') return `<td>${{esc(formatCollateralizationRatio(v))}}</td>`;
       return `<td>${{esc(v)}}</td>`;
     }}).join('') + '</tr>').join('');
